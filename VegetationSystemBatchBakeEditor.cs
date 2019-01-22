@@ -1,5 +1,5 @@
 /// <summary>
-/// v1.0.1 hacked together by baroquedub from code by AwesomeTechnologies
+/// v1.0.2 hacked together by baroquedub from code by AwesomeTechnologies
 /// If you want to say thanks: https://www.buymeacoffee.com/baroquedub
 /// </summary>
 
@@ -26,6 +26,7 @@ public class VegetationSystemBatchBakeEditor : EditorWindow
     private bool _debugToLog = false;
     private bool _addPersistentStorage = true;
     private bool _autoBake = true;
+    private bool _forceItemsEnabled = false;
     private string _assetsPath = "Assets/" + _DEFAULT_FOLDER;
 
 
@@ -34,7 +35,7 @@ public class VegetationSystemBatchBakeEditor : EditorWindow
     public static void ShowWindow()
     {
         EditorWindow window = EditorWindow.GetWindow(typeof(VegetationSystemBatchBakeEditor));
-        window.minSize = new Vector2(460f, 600f);
+        window.minSize = new Vector2(460f, 620f);
     }
 
     void OnGUI()
@@ -72,28 +73,26 @@ public class VegetationSystemBatchBakeEditor : EditorWindow
         _addPersistentStorage = EditorGUILayout.Toggle("Add Persistent Storage", _addPersistentStorage);
         if (_addPersistentStorage)
         {
-            if (_usePrefab)
-            {
-                _autoBake = false;
-                EditorGUILayout.LabelField("Disabled because baking persitent storage on prefab instance is currently broken", EditorStyles.miniLabel);
-            }
-            // disable autoBake tick box if prefab is being used 
-            using (new EditorGUI.DisabledScope(_usePrefab == true))
-            {
-                _autoBake = EditorGUILayout.Toggle("Bake Persistent Storage", _autoBake);
-            }
-            _assetsPath =
-                EditorGUILayout.TextField("Baked Storage path", _assetsPath);
+            _autoBake = EditorGUILayout.Toggle("Bake Persistent Storage", _autoBake);
         }
 
+        _assetsPath =
+            EditorGUILayout.TextField("Baked Storage path", _assetsPath);
+        _forceItemsEnabled  = EditorGUILayout.Toggle("Force enable VegItems", _forceItemsEnabled);
         GUILayout.EndVertical();
 
+        // ###### MAIN BUTTON: adds Vegetation Systems if not present or replaces with new ones #######
         GUILayout.BeginVertical("box");
-        if (GUILayout.Button("Setup VS and Bake All", GUILayout.Height(50)))
+        if (GUILayout.Button("Add VegetationSystems on all Terrains", GUILayout.Height(50)))
         {
 
+            if (!BasicCheck())
+            {
+                return;
+            }
+
             if (EditorUtility.DisplayDialog("Bake vegetation",
-                    "This will add VegetationSystems on all terrains and, if enabled, bake all Vegetation Items to the persistent storage. 'Enable run-time spawn' will be set to false after bake. ", "Do it", "Cancel"))
+                    "This will add VegetationSystems on all terrains.\nIf enabled, all Vegetation Items will also be baked to a persistent storage asset. 'Enable run-time spawn' will be set to false on all Vegetation Items.\n\nNB. Any existing VegetationSystems will be replaced!\nIf add PersistentStorage or baking are enabled this will overwrite existing baked data in the scene as well as any persistent storage assets in the specified path", "Do it", "Cancel"))
             {
 
                 if (_usePrefab)
@@ -113,6 +112,7 @@ public class VegetationSystemBatchBakeEditor : EditorWindow
         EditorGUILayout.Separator();
         EditorGUILayout.LabelField("Additional Tools", EditorStyles.boldLabel);
 
+        // ###### Deletes all Vegetation Systems in the scene and all PersistentStorage assets #######
         GUILayout.BeginVertical("box");
         EditorGUILayout.HelpBox("This will delete all VegetationSystems on all terrains in the scene as well as any persistent storage assets in the specified path. ", MessageType.Info);
         if (GUILayout.Button("DELETE all VS and baked storage"))
@@ -129,57 +129,81 @@ public class VegetationSystemBatchBakeEditor : EditorWindow
         }
         GUILayout.EndVertical();
 
-        GUILayout.BeginVertical("box");
-        EditorGUILayout.HelpBox("Activate Runtime Spawn on all vegetation items for currently selected Vegetation Package. This is useful after a bake if you want to reactivate disabled items. ", MessageType.Info);
-        if (GUILayout.Button("Activate Runtime Spawn"))
+        if (!_usePrefab) // VegetationPackage utils only
         {
-            if (EditorUtility.DisplayDialog("Reactivate vegetation items",
-            "This will re-enable Activate Runtime Spawn on all vegetation items. Are you sure?", "Enable items", "Cancel"))
+            // ###### Sets all Vegetation Items on selected VegetationPackage to active #######
+            GUILayout.BeginVertical("box");
+            EditorGUILayout.HelpBox("Activate Runtime Spawn on all vegetation items for currently selected Vegetation Package. This is useful after a bake if you want to reactivate disabled items. ", MessageType.Info);
+            if (GUILayout.Button("Activate Runtime Spawn"))
             {
+                if (!BasicCheck())
+                {
+                    return;
+                }
+                if (EditorUtility.DisplayDialog("Reactivate vegetation items",
+                "This will re-enable Activate Runtime Spawn on all vegetation items. Are you sure?", "Enable items", "Cancel"))
+                {
 
-                SetAllItemsToRuntimeSpawn();
+                    SetAllItemsToRuntimeSpawn();
 
+                }
             }
-        }
-        GUILayout.EndVertical();
+            GUILayout.EndVertical();
 
-        GUILayout.BeginVertical("box");
-        EditorGUILayout.HelpBox("Rebake existing PersistentStorage on all terrains. This will delete all existing data in the persistent storage assets used in this scene and reinitialise the selected Vegetation package. ", MessageType.Info);
-        if (GUILayout.Button("Rebake ALL Vegetation Items"))
-        {
-            if (EditorUtility.DisplayDialog("Bake vegetation",
-                "This will overwrite existing baked data in the scene. Are you sure?", "Do Rebake", "Cancel"))
+            // ###### Adds the selected VegetationPackage as an additional Package on the Vegetation Systems in the scene #######
+            GUILayout.BeginVertical("box");
+            EditorGUILayout.HelpBox("Adds a new package to the VegetationSystems on all terrains. If baking is enabled, this will delete all existing data in the persistent storage assets used in this scene. ", MessageType.Info);
+            if (GUILayout.Button("Add additional VegetationPackage"))
             {
+                if (!BasicCheck())
+                {
+                    return;
+                }
+                if (EditorUtility.DisplayDialog("Add additional VegetationPackage",
+                    "If add PersistentStorage or baking are enabled this will overwrite existing baked data in the scene as well as any persistent storage assets in the specified path. Are you sure?", "Add Package", "Cancel"))
+                {
 
-                ReBakeAllStorage();
+                    AddAdditionalPackage();
 
+                }
             }
+            GUILayout.EndVertical();
         }
-        GUILayout.EndVertical();
 
-        GUILayout.BeginVertical("box");
-        EditorGUILayout.HelpBox("Bake all PersistentStorage found on all terrains. This will delete all existing data in the persistent storage assets used in this scene and reinitialise the selected Vegetation package. ", MessageType.Info);
-        if (GUILayout.Button("Bake ALL Vegetation Items"))
-        {
-            if (EditorUtility.DisplayDialog("Force Bake vegetation",
-                "This will overwrite existing baked data in the scene. Are you sure?", "Do Bake", "Cancel"))
-            {
 
-                ManualBake();
 
-            }
-        }
-        GUILayout.EndVertical();
     }
 
+    // check required package or prefab are actually assigned in the editor window
+    bool BasicCheck()
+    {
+        bool result = true;
+        if (_usePrefab)
+        {
+            if (_vegetationSystemPrefab == null)
+            {
+                Debug.LogWarning("You need to assign a source prefab");
+                EditorUtility.DisplayDialog("No VegetationSystem prefab",
+                            "You need to drag and drop a vegetation system prefab into the utility window", "OK");
+                result = false;
+            }
+        }
+        else
+        {
+            if (_vegetationPackage == null)
+            {
+                Debug.LogWarning("You need to assign a vegetation package");
+                EditorUtility.DisplayDialog("No Vegetation Package",
+                            "You need to drag and drop a vegetation package into the utility window", "OK");
+                result = false;
+            }
+        }
+        return result;
+    }
 
     void SetupFromVegetationPackage()
     {
-        if (_vegetationPackage == null)
-        {
-            Debug.LogWarning("You need to assign a vegetation package");
-            return;
-        }
+        
 
         _assetsPath = RemoveTrailingSlash(_assetsPath); // ensures that there isn't an ending slash
 
@@ -187,6 +211,17 @@ public class VegetationSystemBatchBakeEditor : EditorWindow
         {
             if (_debugToLog) Debug.Log("Asset path is invalid. Creating your folders");
             CreateAssetFolders();
+        }
+
+
+        if (_forceItemsEnabled) // Make sure all Vegetation is enabled on Vegetation Package
+        {
+            SetAllItemsToRuntimeSpawn();
+        }
+
+        if (_autoBake) // if going to rebake then delete any existing packages
+        {
+            ClearAllStorageInPath();
         }
 
         var terrains = _rootObject ? _rootObject.GetComponentsInChildren<Terrain>() : GameObject.FindObjectsOfType<Terrain>();
@@ -197,13 +232,18 @@ public class VegetationSystemBatchBakeEditor : EditorWindow
             counter++;
             if (_addPersistentStorage)
             {
+                if (_debugToLog) Debug.Log("---------------------------------------------------------------");
                 // first check if a Vegetation System already exists
                 VegetationSystem _vegetationSystem = terrain.gameObject.GetComponentInChildren<VegetationSystem>();
-                if (_vegetationSystem == null)
-                { // add if not already there
-                    _vegetationSystem = VegetationStudioManager.AddVegetationSystemToTerrain(terrain, _vegetationPackage, true);
-                    if (_debugToLog) Debug.Log("Added VS to " + terrain.name + " (" + counter + " of " + totalNum + ")");
+                if (_vegetationSystem != null)
+                {
+                    DestroyImmediate(_vegetationSystem.gameObject);
                 }
+               // add
+               _vegetationSystem = VegetationStudioManager.AddVegetationSystemToTerrain(terrain, _vegetationPackage, true);
+
+               if (_debugToLog) Debug.Log("Added VS to " + terrain.name + " (" + counter + " of " + totalNum + ")");
+
 
                 if (_debugToLog) Debug.Log("Adding Persistent Storage " + terrain.name + " (" + counter + " of " + totalNum + ")");
                 DoAddPersistentStorage(_vegetationSystem);
@@ -211,7 +251,7 @@ public class VegetationSystemBatchBakeEditor : EditorWindow
             }
             else
             {
-                VegetationStudioManager.AddVegetationSystemToTerrain(terrain, _vegetationPackage);
+                VegetationStudioManager.AddVegetationSystemToTerrain(terrain, _vegetationPackage); // just add a Vegetation System
             }
         }
         EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
@@ -219,11 +259,6 @@ public class VegetationSystemBatchBakeEditor : EditorWindow
 
     void SetupFromPrefab()
     {
-        if (_vegetationSystemPrefab == null)
-        {
-            Debug.LogWarning("You need to assign a source prefab");
-            return;
-        }
 
         _assetsPath = RemoveTrailingSlash(_assetsPath); // ensures that there isn't an ending slash
 
@@ -233,13 +268,30 @@ public class VegetationSystemBatchBakeEditor : EditorWindow
             CreateAssetFolders();
         }
 
+        if (_forceItemsEnabled) // Make sure all Vegetation is enabled on Vegetation Package
+        {
+            _vegetationPackage = _vegetationSystemPrefab.GetComponent<VegetationSystem>().CurrentVegetationPackage;
+            SetAllItemsToRuntimeSpawn();
+        }
+        if (_autoBake) // if going to rebake then delete any existing packages
+        {
+            ClearAllStorageInPath();
+        }
+
         var terrains = _rootObject ? _rootObject.GetComponentsInChildren<Terrain>() : GameObject.FindObjectsOfType<Terrain>();
         int totalNum = terrains.Length;
         int counter = 0;
         foreach (Terrain terrain in terrains)
         {
-            GameObject vegetationSystemObject = Instantiate(_vegetationSystemPrefab, terrain.gameObject.transform);
-            VegetationSystem vegetationSystem = vegetationSystemObject.GetComponent<VegetationSystem>();
+            // first check if a Vegetation System already exists
+            VegetationSystem _vegetationSystem = terrain.gameObject.GetComponentInChildren<VegetationSystem>();
+            if (_vegetationSystem != null)
+            { // add if already there, destroy
+                DestroyImmediate(_vegetationSystem.gameObject);
+            }
+
+                GameObject vegetationSystemObject = Instantiate(_vegetationSystemPrefab, terrain.gameObject.transform);
+                VegetationSystem vegetationSystem = vegetationSystemObject.GetComponent<VegetationSystem>();
             if (vegetationSystem)
             {
                 vegetationSystem.AutoselectTerrain = false;
@@ -266,6 +318,7 @@ public class VegetationSystemBatchBakeEditor : EditorWindow
     void DoAddPersistentStorage(VegetationSystem _vegetationSystem)
     {
 
+        _vegetationSystem.AutomaticWakeup = true;
         // NB seems redundant to recurse into parent object - but this is needed to get the terrain name
         GameObject parentTerrainGo = _vegetationSystem.gameObject.transform.parent.gameObject;
         PersistentVegetationStorage _persistentVegetationStorage = parentTerrainGo.GetComponentInChildren<PersistentVegetationStorage>();
@@ -283,6 +336,10 @@ public class VegetationSystemBatchBakeEditor : EditorWindow
         if (_autoBake)
         {
             if (_debugToLog) Debug.Log("Auto Baking " + parentTerrainGo.name);
+            //if (_vegetationSystem.GetSleepMode())
+            //{
+                _vegetationSystem.SetSleepMode(false); // wake up VegetationSystem, needed for prefab
+            //}
             // now bake
             List<string> vegetationItemIdList =
             VegetationPackageEditorTools.CreateVegetationInfoIdList(_persistentVegetationStorage.VegetationSystem.CurrentVegetationPackage);
@@ -301,86 +358,98 @@ public class VegetationSystemBatchBakeEditor : EditorWindow
 
 
 
+    //v1 just deletes all and rebakes
+    //void ReBakeAllStorage()
+    //{
+    //    ClearAllVegetationSystems();
 
-    void ReBakeAllStorage()
+    //    if (_usePrefab)
+    //    {
+    //        SetupFromPrefab();
+    //    }
+    //    else
+    //    {
+    //        SetupFromVegetationPackage();
+    //    }
+
+    //}
+
+
+
+    void AddAdditionalPackage()
     {
         // do a rebake of existing persistent storage packages.
         // Not quite working as expected - adds additional VegetationPackages to the VegetationSystem component, rather than replacing the existing one
-        // Also, buggy... seems to work first time but not on subsequent rebakes (baked storage ends up empty).
+        // Also, buggy?... seems to work first time but not on subsequent rebakes (baked storage ends up empty).
 
-        if (_vegetationPackage == null)
+
+        // take care of storage (path)
+        _assetsPath = RemoveTrailingSlash(_assetsPath); // ensures that there isn't an ending slash
+
+        if (!AssetDatabase.IsValidFolder(_assetsPath))
         {
-            Debug.LogWarning("You need to assign a vegetation package");
-            return;
+            if (_debugToLog) Debug.Log("Asset path is invalid. Creating your folders");
+            CreateAssetFolders();
         }
 
-        SetAllItemsToRuntimeSpawn(); // reactivates all vegetation items in selected package
+        ClearAllStorageInPath();
 
-        var vegetationSystems = _rootObject ? _rootObject.GetComponentsInChildren<VegetationSystem>() : GameObject.FindObjectsOfType<VegetationSystem>();
 
-        foreach (VegetationSystem _vegetationSystem in vegetationSystems)
-        {
-            //_vegetationSystem.AddVegetationPackage(_vegetationPackage,true); // add new package and enable * TODO should not add but replace existing
 
-            // todo get list of packages and remove old one
-
-            PersistentVegetationStorage _persistentVegetationStorage = _vegetationSystem.gameObject.GetComponent<PersistentVegetationStorage>();
-
-            // re-initialize - to clear existing and get it ready for new package
-            _persistentVegetationStorage.InitializePersistentStorage();
-
-            if (_debugToLog) Debug.Log("re-Initialized storage asset for " + _vegetationSystem.gameObject.transform.parent.gameObject.name);
-
-            // now bake
-            List<string> vegetationItemIdList =
-            VegetationPackageEditorTools.CreateVegetationInfoIdList(_persistentVegetationStorage.VegetationSystem.CurrentVegetationPackage);
-
-            for (int i = 0; i <= vegetationItemIdList.Count - 1; i++)
+            if (_vegetationPackage == null)
             {
-                //_persistentVegetationStorage.RemoveVegetationItemInstances(vegetationItemIdList[i], 0); // not needed as already re-initialized
-                _persistentVegetationStorage.BakeVegetationItem(vegetationItemIdList[i]);
+                Debug.LogWarning("You need to assign a vegetation package");
+                EditorUtility.DisplayDialog("No Vegetation Package",
+                        "You need to drag and drop a vegetation package into the utility window", "OK");
+                return;
             }
-            _persistentVegetationStorage.VegetationSystem.DelayedClearVegetationCellCache();
-            EditorUtility.SetDirty(_persistentVegetationStorage.PersistentVegetationStoragePackage);
-            EditorUtility.SetDirty(_persistentVegetationStorage.VegetationSystem.CurrentVegetationPackage);
-            if (_debugToLog) Debug.Log("Finished Baking for " + _vegetationSystem.gameObject.transform.parent.gameObject.name);
-
-        }
-
-        EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
-
-    }
-
-    void ManualBake()
-    {
-
-        var vegetationSystems = _rootObject ? _rootObject.GetComponentsInChildren<VegetationSystem>() : GameObject.FindObjectsOfType<VegetationSystem>();
-
-        foreach (VegetationSystem _vegetationSystem in vegetationSystems)
-        {
-
-            PersistentVegetationStorage _persistentVegetationStorage = _vegetationSystem.gameObject.GetComponent<PersistentVegetationStorage>();
-
-            // now bake
-            List<string> vegetationItemIdList =
-            VegetationPackageEditorTools.CreateVegetationInfoIdList(_persistentVegetationStorage.VegetationSystem.CurrentVegetationPackage);
-
-            for (int i = 0; i <= vegetationItemIdList.Count - 1; i++)
+            if (_forceItemsEnabled) // Make sure all Vegetation is enabled on Vegetation Package
             {
-                _persistentVegetationStorage.BakeVegetationItem(vegetationItemIdList[i]);
+                SetAllItemsToRuntimeSpawn();
             }
-            _persistentVegetationStorage.VegetationSystem.DelayedClearVegetationCellCache();
-            EditorUtility.SetDirty(_persistentVegetationStorage.PersistentVegetationStoragePackage);
-            EditorUtility.SetDirty(_persistentVegetationStorage.VegetationSystem.CurrentVegetationPackage);
+
+
+            var terrains = _rootObject ? _rootObject.GetComponentsInChildren<Terrain>() : GameObject.FindObjectsOfType<Terrain>();
+            int totalNum = terrains.Length;
+            int counter = 0;
+            foreach (Terrain terrain in terrains)
+            {
+                counter++;
+                if (_addPersistentStorage)
+                {
+                    // first check if a Vegetation System already exists
+                    VegetationSystem _vegetationSystem = terrain.gameObject.GetComponentInChildren<VegetationSystem>();
+                    if (_vegetationSystem == null)
+                    { // add if not already there
+                    
+                        _vegetationSystem = VegetationStudioManager.AddVegetationSystemToTerrain(terrain, _vegetationPackage, true);
+                        if (_debugToLog) Debug.Log("Rebaking: Added missing VS to " + terrain.name + " (" + counter + " of " + totalNum + ")");
+                    
+                    }
+                    else
+                    {
+                        if (_debugToLog) Debug.Log("Rebaking VS already existed on " + terrain.name + " (" + counter + " of " + totalNum + ")");
+                        _vegetationSystem.AddVegetationPackage(_vegetationPackage, true);
+                    }
+
+                    if (_debugToLog) Debug.Log("Adding Persistent Storage " + terrain.name + " (" + counter + " of " + totalNum + ")");
+                    DoAddPersistentStorage(_vegetationSystem);
+            }
+            else
+            {
+                // just add a Vegetation System
+                VegetationStudioManager.AddVegetationSystemToTerrain(terrain, _vegetationPackage);
+            }
 
         }
+            
 
         EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
 
     }
 
 
-    void SetAllItemsToRuntimeSpawn()
+        void SetAllItemsToRuntimeSpawn()
     {
         if (_vegetationPackage == null)
         {
